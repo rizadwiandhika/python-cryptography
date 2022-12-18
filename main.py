@@ -10,7 +10,7 @@ from constants import (
     FP,
 )
 
-
+# Helper functions
 def string_to_bitlist(inp: str) -> typing.List[int]:
     data = inp.encode("ascii")
     l = len(data) * 8
@@ -66,7 +66,50 @@ def parse_cipher_text_to_bit_blocks(cipher: str) -> typing.List[typing.List[int]
     return cipher_bit_blocks
 
 
-# 1.
+def des_s_function(block: typing.List[int], table: typing.List[typing.List[int]]):
+    if len(block) != 6:
+        raise RuntimeError("des_s_function error: block length must be 6 bits!")
+
+    bits_row: str = "".join(map(str, [block[0], block[5]]))
+    bits_column: str = "".join(map(str, block[1:5]))
+
+    row = int(bits_row, 2)
+    column = int(bits_column, 2)
+
+    v = table[row][column]
+    b = bin(v)[2:].zfill(4)
+
+    return list(map(int, b))
+
+
+def des_round_f(right: typing.List[int], key: typing.List[int]) -> typing.List[int]:
+    if len(right) != 32:
+        raise RuntimeError("des_round_f error: right length must be 32 bits!")
+
+    expanded_right = [0] * 48
+    for i, _val in enumerate(expanded_right):
+        expanded_right[i] = right[EXPANSION_TABLE[i]]
+
+    xor_result = [0] * 48
+    for i in range(48):
+        xor_result[i] = expanded_right[i] ^ key[i]
+
+    s_blocks: typing.List[int] = []
+
+    for i in range(8):
+        bi = xor_result[i * 6 : i * 6 + 6]
+        si = des_s_function(bi, S_BOXES[i])
+
+        s_blocks += si
+
+    result = [0] * 32
+    for i, _val in enumerate(result):
+        result[i] = s_blocks[S_BOX_PERMUTATION[i]]
+
+    return result
+
+
+# 1. Sub keys generation (used for every round)
 def generate_sub_keys(str_key_64: str) -> typing.List[typing.List[int]]:
     if len(str_key_64) != 8:
         raise RuntimeError("Key length must be 64 bits or 8 characters!")
@@ -117,49 +160,6 @@ def initial_permutation(message_64_bits: typing.List[int]) -> typing.List[int]:
     return result
 
 
-def des_s_function(block: typing.List[int], table: typing.List[typing.List[int]]):
-    if len(block) != 6:
-        raise RuntimeError("des_s_function error: block length must be 6 bits!")
-
-    bits_row: str = "".join(map(str, [block[0], block[5]]))
-    bits_column: str = "".join(map(str, block[1:5]))
-
-    row = int(bits_row, 2)
-    column = int(bits_column, 2)
-
-    v = table[row][column]
-    b = bin(v)[2:].zfill(4)
-
-    return list(map(int, b))
-
-
-def des_round_f(right: typing.List[int], key: typing.List[int]) -> typing.List[int]:
-    if len(right) != 32:
-        raise RuntimeError("des_round_f error: right length must be 32 bits!")
-
-    expanded_right = [0] * 48
-    for i, _val in enumerate(expanded_right):
-        expanded_right[i] = right[EXPANSION_TABLE[i]]
-
-    xor_result = [0] * 48
-    for i in range(48):
-        xor_result[i] = expanded_right[i] ^ key[i]
-
-    s_blocks: typing.List[int] = []
-
-    for i in range(8):
-        bi = xor_result[i * 6 : i * 6 + 6]
-        si = des_s_function(bi, S_BOXES[i])
-
-        s_blocks += si
-
-    result = [0] * 32
-    for i, _val in enumerate(result):
-        result[i] = s_blocks[S_BOX_PERMUTATION[i]]
-
-    return result
-
-
 # 3. DES round
 def des_round(
     message_64_bits: typing.List[int], key: typing.List[int]
@@ -196,20 +196,21 @@ def final_permutation(message_64_bits: typing.List[int]) -> str:
     return "".join(map(str, result))
 
 
+# Encrypt
 def des_encrypt(plain_text: str, key: str) -> str:
     cipher_text = ""
 
-    # Each block is 64 bits
+    # Convert plain text into blocks of bits that each block size is 64 bits
     bit_blocks = parse_plain_text_into_bit_blocks(plain_text)
 
-    # 1. Generate sub keys (16 sub keys for each 16 rounds later)
+    # Generate sub keys (16 sub keys for each 16 rounds later)
     sub_keys = generate_sub_keys(key)
 
     for block in bit_blocks:
-        # 2. Initial permutation
+        # Initial permutation
         block = initial_permutation(block)
 
-        # 3. Apply 16 rounds for each block
+        # Apply 16 rounds for each block
         for i in range(16):
             block = des_round(block, sub_keys[i])
 
@@ -219,56 +220,62 @@ def des_encrypt(plain_text: str, key: str) -> str:
         # Switch left and right
         block = right + left
 
-        # 4. Final permutation
+        # Final permutation
         cipher_block_bits = final_permutation(block)
 
+        # Convert cipher block bits into hex string
         cipher_text += "%08X" % int(cipher_block_bits, 2)
-        # cipher_text += hex(int(cipher_block_bits, 2))[2:]
 
     return cipher_text
 
 
-# ! Masih salah
+# Decrypt
 def des_decrypt(cipher_text: str, key: str) -> str:
     message = ""
 
+    # Convert cipher text into blocks of bits that each block size is 64 bits
     cipher_text_bit_blocks = parse_cipher_text_to_bit_blocks(cipher_text)
 
-    # 1. Generate sub keys (16 sub keys for each 16 rounds later)
+    # Generate sub keys (16 sub keys for each 16 rounds later)
     sub_keys = generate_sub_keys(key)
 
     for block in cipher_text_bit_blocks:
-        # 2. Initial permutation
+        # Initial permutation
         block = initial_permutation(block)
 
-        # 3. Apply 16 rounds for each block
+        # Apply 16 rounds for each block
         for i in range(16):
-            # print(f"i: {i}\t len block: {len(block)}")
+            # In decryption, we use the sub keys in reverse order
             block = des_round(block, sub_keys[15 - i])
 
         left = block[:32]
         right = block[32:]
+
+        # Switch left and right
         block = right + left
 
-        # 4. Final permutation
-        cipher_block_bits = final_permutation(block)
+        # Final permutation
+        plain_block_bits = final_permutation(block)
 
-        message += bitlist_to_string([int(x) for x in cipher_block_bits])
-        # or: cipher_text += hex(int(cipher_block_bits, 2)) BUT need additional parsing
+        # Convert plain block bits into string ascii characters
+        message += bitlist_to_string([int(x) for x in plain_block_bits])
 
     return message
 
 
 def main():
-    key = "password"
-    plain_text = "abcdefghijklmnop"
+    # DES Implementation (ECB mode)
 
-    result = des_encrypt(plain_text, key)  # both should be 64 bits length
-    print(f"DES: {result}")
+    key = "password"  # 64 bits
+    original_plain_text = "abcdefghijklmnop"  # 64 bits
 
-    # ! Masih salah
-    result = des_decrypt(result, key)
-    print(f"DES decrypted: {result}")
+    print(f"Original plain text: {original_plain_text}\n")
+
+    cipher_text = des_encrypt(original_plain_text, key)  # each should be 64 bits length
+    print(f"DES encrypted: {cipher_text}")
+
+    plain_text = des_decrypt(cipher_text, key)
+    print(f"DES decrypted: {plain_text}")
 
 
 if __name__ == "__main__":
