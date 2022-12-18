@@ -267,7 +267,7 @@ def main():
     # DES Implementation (ECB mode)
 
     key = "password"  # 64 bits
-    original_plain_text = "abcdefghijklmnop"  # 64 bits
+    original_plain_text = "abcdefghijklmnop"  # multiply of 64 bits
 
     print(f"Original plain text: {original_plain_text}\n")
 
