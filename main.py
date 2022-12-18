@@ -11,7 +11,7 @@ from constants import (
 )
 
 
-def string_to_bitList(inp: str) -> typing.List[int]:
+def string_to_bitlist(inp: str) -> typing.List[int]:
     data = inp.encode("ascii")
     l = len(data) * 8
     result = [0] * l
@@ -37,7 +37,7 @@ def bitlist_to_string(bitlist: typing.List[int]) -> str:
     return result.decode("ascii")
 
 
-def split_message_into_bit_blocks(message: str) -> typing.List[typing.List[int]]:
+def parse_plain_text_into_bit_blocks(message: str) -> typing.List[typing.List[int]]:
     if len(message) % 8 != 0:
         raise RuntimeError("Message length must be multiple of 8!")
 
@@ -47,12 +47,12 @@ def split_message_into_bit_blocks(message: str) -> typing.List[typing.List[int]]
 
     messages_bit_blocks: typing.List[typing.List[int]] = []
     for block in messages_str_blocks:
-        messages_bit_blocks.append(string_to_bitList(block))
+        messages_bit_blocks.append(string_to_bitlist(block))
 
     return messages_bit_blocks
 
 
-def parse_hex_to_bit_blocks(cipher: str) -> typing.List[typing.List[int]]:
+def parse_cipher_text_to_bit_blocks(cipher: str) -> typing.List[typing.List[int]]:
     if len(cipher) % 16 != 0:
         raise RuntimeError("Message length must be multiple of 16!")
 
@@ -61,7 +61,6 @@ def parse_hex_to_bit_blocks(cipher: str) -> typing.List[typing.List[int]]:
     # 16 characters of hex string will be 64 bits
     for i in range(0, len(cipher), 16):
         block_str = bin(int(cipher[i : i + 16], 16))[2:].zfill(64)
-        # block_str = bin(int(cipher[i : i + 16], 16))[:2].zfill(64)
         cipher_bit_blocks.append([int(x) for x in block_str])
 
     return cipher_bit_blocks
@@ -72,7 +71,7 @@ def generate_sub_keys(str_key_64: str) -> typing.List[typing.List[int]]:
     if len(str_key_64) != 8:
         raise RuntimeError("Key length must be 64 bits or 8 characters!")
 
-    key_64 = string_to_bitList(str_key_64)
+    key_64 = string_to_bitlist(str_key_64)
     key_56 = [0] * 56
 
     # iterate over key_56 with index
@@ -173,14 +172,14 @@ def des_round(
     left = message_64_bits[:32]
     right = message_64_bits[32:]
 
-    next_left = right
-    next_right = [0] * 32
+    new_left = right
+    new_right = [0] * 32
 
     round_result = des_round_f(right, key)
     for i in range(32):
-        next_right[i] = next_left[i] ^ round_result[i]
+        new_right[i] = left[i] ^ round_result[i]
 
-    return next_left + next_right
+    return new_left + new_right
 
 
 # 4. Final permutation
@@ -197,27 +196,28 @@ def final_permutation(message_64_bits: typing.List[int]) -> str:
     return "".join(map(str, result))
 
 
-def des(message: str, key: str) -> str:
+def des_encrypt(plain_text: str, key: str) -> str:
     cipher_text = ""
 
     # Each block is 64 bits
-    message_bit_blocks = split_message_into_bit_blocks(message)
+    bit_blocks = parse_plain_text_into_bit_blocks(plain_text)
 
     # 1. Generate sub keys (16 sub keys for each 16 rounds later)
     sub_keys = generate_sub_keys(key)
 
-    for block in message_bit_blocks:
+    for block in bit_blocks:
         # 2. Initial permutation
         block = initial_permutation(block)
 
         # 3. Apply 16 rounds for each block
         for i in range(16):
-            # print(f"i: {i}\t len block: {len(block)}")
             block = des_round(block, sub_keys[i])
 
         left = block[:32]
         right = block[32:]
-        block = left + right
+
+        # Switch left and right
+        block = right + left
 
         # 4. Final permutation
         cipher_block_bits = final_permutation(block)
@@ -232,7 +232,7 @@ def des(message: str, key: str) -> str:
 def des_decrypt(cipher_text: str, key: str) -> str:
     message = ""
 
-    cipher_text_bit_blocks = parse_hex_to_bit_blocks(cipher_text)
+    cipher_text_bit_blocks = parse_cipher_text_to_bit_blocks(cipher_text)
 
     # 1. Generate sub keys (16 sub keys for each 16 rounds later)
     sub_keys = generate_sub_keys(key)
@@ -248,12 +248,12 @@ def des_decrypt(cipher_text: str, key: str) -> str:
 
         left = block[:32]
         right = block[32:]
-        block = left + right
+        block = right + left
 
         # 4. Final permutation
         cipher_block_bits = final_permutation(block)
 
-        message += "%08X" % int(cipher_block_bits, 2)
+        message += bitlist_to_string([int(x) for x in cipher_block_bits])
         # or: cipher_text += hex(int(cipher_block_bits, 2)) BUT need additional parsing
 
     return message
@@ -261,8 +261,9 @@ def des_decrypt(cipher_text: str, key: str) -> str:
 
 def main():
     key = "password"
+    plain_text = "abcdefghijklmnop"
 
-    result = des("abcdefghijklmnop", key)  # both should be 64 bits length
+    result = des_encrypt(plain_text, key)  # both should be 64 bits length
     print(f"DES: {result}")
 
     # ! Masih salah
